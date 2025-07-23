@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>抽獎活動與管理（Firebase 版）</title>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getDatabase, ref, get, set, update } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+    // Firebase 配置
+    const firebaseConfig = {
+      apiKey: "AIzaSyA7V7xonHMic75yTP1AX3IeN5Yqy50CyA0",
+      authDomain: "shopeedraw.firebaseapp.com",
+      databaseURL: "https://shopeedraw-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "shopeedraw",
+      storageBucket: "shopeedraw.firebasestorage.app",
+      messagingSenderId: "497535674562",
+      appId: "1:497535674562:web:552b1aa3cc21671aff735b"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // 介面元素
+    const accountInput = document.getElementById("account");
+    const passwordInput = document.getElementById("password");
+    const resultDiv = document.getElementById("result");
+    const drawBtn = document.getElementById("drawBtn");
+    const adminPanel = document.getElementById("adminPanel");
+    const mainInterface = document.getElementById("mainInterface");
+
+    drawBtn.onclick = async () => {
+      const acc = accountInput.value.trim();
+      const pwd = passwordInput.value.trim();
+      if (!acc || !pwd) {
+        alert("請輸入帳號和密碼");
+        return;
+      }
+      try {
+        // 先確認帳號是否已抽過
+        const recordSnap = await get(ref(db, `records/${acc}`));
+        if (recordSnap.exists()) {
+          resultDiv.textContent = `您已抽過獎，獎項為：${recordSnap.val()}`;
+          return;
+        }
+        // 讀取獎項
+        const prizesSnap = await get(ref(db, 'prizes'));
+        if (!prizesSnap.exists()) {
+          alert("獎品資料不存在");
+          return;
+        }
+        let prizes = prizesSnap.val();
+        let total = prizes.first + prizes.second + prizes.third;
+        if (total <= 0) {
+          resultDiv.textContent = "獎項已抽完。";
+          return;
+        }
+
+        // 抽獎
+        let rand = Math.random() * total;
+        let selected = "";
+        if (rand < prizes.first) {
+          selected = "一等獎";
+          prizes.first--;
+        } else if (rand < prizes.first + prizes.second) {
+          selected = "二等獎";
+          prizes.second--;
+        } else {
+          selected = "三等獎";
+          prizes.third--;
+        }
+
+        // 寫入資料庫
+        await update(ref(db, 'prizes'), prizes);
+        await set(ref(db, `records/${acc}`), selected);
+
+        resultDiv.textContent = `🎉 恭喜你抽中【${selected}】！`;
+      } catch (err) {
+        alert("抽獎出錯：" + err.message);
+      }
+    };
+
+    window.loginAdmin = async function () {
+      const pwd = document.getElementById("adminPwd").value;
+      if (pwd !== "13532764871") {
+        alert("管理密碼錯誤");
+        return;
+      }
+      mainInterface.style.display = "none";
+      adminPanel.style.display = "block";
+      try {
+        const prizesSnap = await get(ref(db, 'prizes'));
+        if (!prizesSnap.exists()) {
+          alert("獎品資料不存在");
+          return;
+        }
+        const prizes = prizesSnap.val();
+        document.getElementById("first").textContent = prizes.first;
+        document.getElementById("second").textContent = prizes.second;
+        document.getElementById("third").textContent = prizes.third;
+      } catch (err) {
+        alert("讀取獎品失敗：" + err.message);
+      }
+    };
+
+    window.resetPrizes = async function () {
+      if (confirm("確定要復原所有獎項數量嗎？")) {
+        await set(ref(db, 'prizes'), { first: 30, second: 100, third: 9870 });
+        alert("獎項數量已復原");
+        document.getElementById("first").textContent = 30;
+        document.getElementById("second").textContent = 100;
+        document.getElementById("third").textContent = 9870;
+      }
+    };
+
+    window.clearRecords = async function () {
+      if (confirm("確定要刪除所有抽獎紀錄嗎？")) {
+        await set(ref(db, 'records'), {});
+        alert("紀錄已清除");
+      }
+    };
+
+    window.logoutAdmin = function () {
+      adminPanel.style.display = "none";
+      mainInterface.style.display = "block";
+      resultDiv.textContent = "";
+    };
+
+    window.exportCSV = async function () {
+      try {
+        const snap = await get(ref(db, 'records'));
+        const data = snap.val();
+        let csv = '帳號,中獎獎項\n';
+        for (let acc in data) {
+          csv += `${acc},${data[acc]}\n`;
+        }
+        let blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        let link = document.createElement('a');
+        link.setAttribute('href', URL.createObjectURL(blob));
+        link.setAttribute('download', '抽獎紀錄.csv');
+        link.click();
+      } catch (err) {
+        alert("導出失敗：" + err.message);
+      }
+    };
+  </script>
+
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #f8f9fa, #e0f7ff);
+      margin: 0;
+      padding: 2rem;
+      color: #333;
+    }
+    .container,
+    .admin {
+      background: #fff;
+      padding: 2rem;
+      border-radius: 20px;
+      box-shadow: 0 0 15px rgba(0, 0, 0, 0.1);
+      max-width: 100%;
+      width: 100%;
+      box-sizing: border-box;
+      margin: 2rem auto;
+    }
+    input,
+    button {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      margin: 12px 0;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    button {
+      background: #3399ff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .result {
+      margin-top: 1rem;
+      font-size: 1.2rem;
+      font-weight: bold;
+    }
+    .admin {
+      display: none;
+    }
+    .info {
+      margin: 1rem 0;
+      line-height: 1.6;
+    }
+    @media (min-width: 600px) {
+      .container,
+      .admin {
+        max-width: 500px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="mainInterface">
+    <h2>蝦皮抽獎活動</h2>
+    <input type="text" id="account" placeholder="蝦皮帳號" />
+    <input type="password" id="password" placeholder="密碼" />
+    <button id="drawBtn">我要抽獎</button>
+    <div class="result" id="result"></div>
+    <input type="password" id="adminPwd" placeholder="管理密碼" />
+    <button onclick="loginAdmin()">進入管理頁面</button>
+  </div>
+
+  <div class="admin" id="adminPanel">
+    <h2>🎯 管理員面板</h2>
+    <div class="info">
+      <strong>目前獎項剩餘：</strong><br />
+      一等獎：<span id="first">-</span><br />
+      二等獎：<span id="second">-</span><br />
+      三等獎：<span id="third">-</span>
+    </div>
+    <button onclick="resetPrizes()">🔄 復原獎項數量</button>
+    <button onclick="exportCSV()">📁 導出抽獎紀錄</button>
+    <button onclick="clearRecords()">🗑 刪除所有抽獎紀錄</button>
+    <button onclick="logoutAdmin()">🔙 返回抽獎頁</button>
+  </div>
+</body>
+</html>
